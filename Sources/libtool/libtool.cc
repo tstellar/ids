@@ -13,6 +13,17 @@
 #include <set>
 #include <string>
 
+namespace {
+// TODO(compnerd) make this configurable via a configuration file or command line
+const std::set<std::string> kIgnoredFunctions{
+  "_BitScanForward",
+  "_BitScanForward64",
+  "_BitScanReverse",
+  "_BitScanReverse64",
+  "__builtin_strlen",
+};
+}
+
 namespace libtool {
 llvm::cl::OptionCategory category{"libtool options"};
 
@@ -62,14 +73,6 @@ public:
     if (FD->hasAttr<clang::DLLExportAttr>() ||
         FD->hasAttr<clang::DLLImportAttr>())
       return true;
-
-    static const std::set<std::string> kIgnoredFunctions{
-      "_BitScanForward",
-      "_BitScanForward64",
-      "_BitScanReverse",
-      "_BitScanReverse64",
-      "__builtin_strlen",
-    };
 
     // Known Forward Declarations
     if (kIgnoredFunctions.find(FD->getNameAsString()) != kIgnoredFunctions.end())
