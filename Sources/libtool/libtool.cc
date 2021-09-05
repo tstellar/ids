@@ -101,16 +101,18 @@ public:
     if (MD->isDeleted() || MD->isDefaulted())
       return true;
 
+    // Ignore private members (except for a negative check).
+    if (MD->getAccess() == clang::AccessSpecifier::AS_private) {
+      // Private methods should not be exported.
+      if (MD->hasAttr<clang::DLLExportAttr>())
+        diagnose(MD, location);   // TODO(compnerd) improve the diagnostic
+      return true;
+    }
+
     // Methods which are explicitly exported are properly annotated.
     if (MD->hasAttr<clang::DLLExportAttr>() ||
         MD->hasAttr<clang::DLLImportAttr>())
       return true;
-
-    if (MD->getAccess() == clang::AccessSpecifier::AS_private &&
-        MD->hasAttr<clang::DLLExportAttr>()) {
-      llvm::outs() << "WARNING: over-exporting ";
-      diagnose(MD, location);
-    }
 
     const clang::CXXRecordDecl *RD = MD->getParent()->getCanonicalDecl();
 
