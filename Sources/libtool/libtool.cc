@@ -18,7 +18,7 @@ llvm::cl::OptionCategory category{"libtool options"};
 }
 
 namespace {
-// TODO(compnerd) make this configurable via a configuration file or command line
+// TODO(compnerd) make this configurable via a configuration file or commandline
 const std::set<std::string> kIgnoredFunctions{
   "_BitScanForward",
   "_BitScanForward64",
