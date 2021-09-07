@@ -42,6 +42,11 @@ llvm::cl::opt<bool>
 inplace("inplace", llvm::cl::init(false),
         llvm::cl::desc("Apply suggested changes in-place"),
         llvm::cl::cat(libtool::category));
+
+template <typename Key, typename Compare, typename Allocator>
+bool contains(const std::set<Key, Compare, Allocator>& set, const Key& key) {
+  return set.find(key) != set.end();
+}
 }
 
 namespace libtool {
@@ -112,8 +117,9 @@ public:
         FD->hasAttr<clang::DLLImportAttr>())
       return true;
 
-    // Known Forward Declarations
-    if (kIgnoredFunctions.find(FD->getNameAsString()) != kIgnoredFunctions.end())
+    // Ignore known forward declarations (builtins)
+    // TODO(compnerd) replace with std::set::contains in C++20
+    if (contains(kIgnoredFunctions, FD->getNameAsString()))
       return true;
 
     clang::SourceLocation insertion_point =
