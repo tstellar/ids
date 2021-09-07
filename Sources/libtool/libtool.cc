@@ -71,7 +71,7 @@ class visitor : public clang::RecursiveASTVisitor<visitor> {
 
     static unsigned kID =
         diagnostics_engine.getCustomDiagID(clang::DiagnosticsEngine::Remark,
-                                           "unexported private interface %0");
+                                           "exported private interface %0");
 
     return diagnostics_engine.Report(location, kID);
   }
