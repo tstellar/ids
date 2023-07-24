@@ -11,5 +11,5 @@ target_include_directories(idt PRIVATE
   ${LLVM_INCLUDE_DIRS}
   ${CLANG_INCLUDE_DIRS})
 target_link_libraries(idt PRIVATE
-  clangRewriteFrontend
-  clangTooling)
+  clang-cpp
+  LLVM)

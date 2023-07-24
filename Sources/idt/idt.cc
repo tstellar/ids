@@ -43,6 +43,11 @@ inplace("inplace", llvm::cl::init(false),
         llvm::cl::desc("Apply suggested changes in-place"),
         llvm::cl::cat(idt::category));
 
+llvm::cl::opt<bool>
+annotateClasses("annotate-classes", llvm::cl::init(true),
+                 llvm::cl::desc("Annotate classes but not their members"),
+                 llvm::cl::cat(idt::category));
+
 template <typename Key, typename Compare, typename Allocator>
 bool contains(const std::set<Key, Compare, Allocator>& set, const Key& key) {
   return set.find(key) != set.end();
@@ -87,28 +92,48 @@ public:
 
   bool VisitFunctionDecl(clang::FunctionDecl *FD) {
     clang::FullSourceLoc location = get_location(FD);
+    //llvm::dbgs() << location << "\n";
 
+    llvm::dbgs() << "FunctionDecl: " << FD->getNameAsString() << "\n";
+
+    llvm::StringRef filename = source_manager_.getFilename(location);
+    if (filename.find("/lib/") != llvm::StringRef::npos ||
+        filename.find("/tools/") != llvm::StringRef::npos ||
+        filename.find(".def") != llvm::StringRef::npos)
+      return true;
     // Ignore declarations from the system.
     if (source_manager_.isInSystemHeader(location))
       return true;
 
+    llvm::dbgs() << "Not in system neader\n";
     // We are only interested in non-dependent types.
     if (FD->isDependentContext())
       return true;
 
+    llvm::dbgs() << "Not dependent context\n";
     // If the function has a body, it can be materialized by the user.
-    if (FD->hasBody())
+    if (FD->doesThisDeclarationHaveABody())
       return true;
 
+    llvm::dbgs() << "Not has body\n";
     // Ignore friend declarations.
     if (llvm::isa<clang::FriendDecl>(FD))
       return true;
 
+    llvm::dbgs() << "Friend kind: " << FD->getFriendObjectKind() << "\n";
+    if (FD->getFriendObjectKind() != clang::Decl::FriendObjectKind::FOK_None)
+        return true;
+
+    llvm::dbgs() << "Not friend\n";
     // Ignore deleted and defaulted functions (e.g. operators).
     if (FD->isDeleted() || FD->isDefaulted())
       return true;
 
+    llvm::dbgs() << "Not deleted\n";
     if (const auto *MD = llvm::dyn_cast<clang::CXXMethodDecl>(FD)) {
+      // Skip class members if we are only annotating classes. 
+      if (annotateClasses)
+        return true;
       // Ignore private members (except for a negative check).
       if (MD->getAccess() == clang::AccessSpecifier::AS_private) {
         // TODO(compnerd) this should also handle `__visibility__`
@@ -117,22 +142,27 @@ public:
           exported_private_interface(location) << MD;
         return true;
       }
+    llvm::dbgs() << "Not Method\n";
 
       // Pure virtual methods cannot be exported.
       if (MD->isPure())
         return true;
     }
+    llvm::dbgs() << "Not Pure\n";
 
     // If the function has a dll-interface, it is properly annotated.
     // TODO(compnerd) this should also handle `__visibility__`
     if (FD->hasAttr<clang::DLLExportAttr>() ||
-        FD->hasAttr<clang::DLLImportAttr>())
+        FD->hasAttr<clang::DLLImportAttr>() ||
+        FD->hasAttr<clang::VisibilityAttr>())
       return true;
 
+    llvm::dbgs() << "No attribute\n";
     // Ignore known forward declarations (builtins)
     // TODO(compnerd) replace with std::set::contains in C++20
     if (contains(kIgnoredFunctions, FD->getNameAsString()))
       return true;
+    llvm::dbgs() << "Not ignored.\n";
 
     clang::SourceLocation insertion_point =
         FD->getTemplatedKind() == clang::FunctionDecl::TK_NonTemplate
@@ -140,6 +170,122 @@ public:
             : FD->getInnerLocStart();
     unexported_public_interface(location)
         << FD
+        << clang::FixItHint::CreateInsertion(insertion_point,
+                                             export_macro + " ");
+    return true;
+  }
+  
+  bool VisitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl *CTSD) {
+    llvm::dbgs() << "TemplateDecl: " << CTSD->getNameAsString() << "\n";
+    clang::FullSourceLoc location = get_location(CTSD);
+    location.dump();
+    llvm::StringRef filename = source_manager_.getFilename(location);
+    if (filename.find("/lib/") != llvm::StringRef::npos ||
+        filename.find("/tools/") != llvm::StringRef::npos ||
+        filename.find(".def") != llvm::StringRef::npos)
+      return true;
+    llvm::dbgs() << "In correct spot\n";
+    if (CTSD->hasAttr<clang::DLLExportAttr>() ||
+        CTSD->hasAttr<clang::DLLImportAttr>() ||
+        CTSD->hasAttr<clang::VisibilityAttr>())
+      return true; 
+    llvm::dbgs() << "No visibility\n";
+  
+//    if (CTSD->isThisDeclarationADefinition())
+//      return true;
+
+    int offset = 6;
+    if (CTSD->getSpecializedTemplate()->getTemplatedDecl()->isStruct())
+      offset = 7;
+    clang::SourceLocation insertion_point = CTSD->getExternLoc();
+    unexported_public_interface(location)
+        << CTSD
+        << clang::FixItHint::CreateInsertion(insertion_point,
+                                             export_macro + " ");
+    return true;
+    
+  }
+  
+  bool VisitVarDecl(clang::VarDecl *VD) {
+    clang::FullSourceLoc location = get_location(VD);
+    llvm::StringRef filename = source_manager_.getFilename(location);
+    if (filename.find("/lib/") != llvm::StringRef::npos ||
+        filename.find("/tools/") != llvm::StringRef::npos ||
+        filename.find(".def") != llvm::StringRef::npos)
+      return true;
+    if (VD->hasAttr<clang::DLLExportAttr>() ||
+        VD->hasAttr<clang::DLLImportAttr>() ||
+        VD->hasAttr<clang::VisibilityAttr>())
+      return true; 
+   
+    if (!VD->hasExternalStorage())
+      return true; 
+    clang::SourceLocation insertion_point = VD->getBeginLoc();
+    unexported_public_interface(location)
+        << VD
+        << clang::FixItHint::CreateInsertion(insertion_point,
+                                             export_macro + " ");
+    return true;
+  }
+
+  bool VisitCXXRecordDecl(clang::CXXRecordDecl *CD) {
+    llvm::dbgs() << "RecordDecl: " << CD->getNameAsString() << "\n";
+    if (!annotateClasses)
+      return true;
+
+    if (CD->getNameAsString() == "LLVM_ABI")
+      return true;
+    clang::FullSourceLoc location = get_location(CD);
+    llvm::StringRef filename = source_manager_.getFilename(location);
+    if (filename.find("/lib/") != llvm::StringRef::npos ||
+        filename.find("/tools/") != llvm::StringRef::npos ||
+        filename.find(".def") != llvm::StringRef::npos)
+      return true;
+    // Ignore declarations from the system.
+    if (source_manager_.isInSystemHeader(location))
+      return true;
+
+    llvm::dbgs() << "NOt in system header\n";
+    if (!CD->isCompleteDefinition())
+      return true;
+
+     llvm::dbgs() << "Is a complete devinition\n";
+
+    // We don't want to annotate nested classes.
+    if (llvm::isa<clang::RecordDecl>(CD->getParent()))
+      return true;
+    
+    llvm::dbgs() << "NOt a nested class\n";
+    llvm::dbgs() << "Export: " << CD->hasAttr<clang::DLLExportAttr>() << " IMPORT: " << CD->hasAttr<clang::DLLImportAttr>() << " VISIBLITY: " << CD->hasAttr<clang::VisibilityAttr>() << "\n";
+    if (CD->hasAttr<clang::DLLExportAttr>() ||
+        CD->hasAttr<clang::DLLImportAttr>() ||
+        CD->hasAttr<clang::VisibilityAttr>())
+      return true; 
+
+    llvm::dbgs() << "No visibility\n";
+    if (CD->isUnion())
+       return true;
+
+    llvm::dbgs() << "No Union\n";
+    // Only annotate classes in headers.
+    if (source_manager_.getIncludeLoc(source_manager_.getFileID(CD->getBeginLoc())).isInvalid())
+       return true;
+
+    llvm::dbgs() << "In Header\n";
+    llvm::dbgs() << "Template kind: " << CD->getTemplateSpecializationKind() << "\n";
+    if (CD->getTemplateSpecializationKind() == clang::TSK_ExplicitInstantiationDeclaration ||
+        CD->getTemplateSpecializationKind() == clang::TSK_ExplicitInstantiationDefinition)
+      return true;
+
+    llvm::dbgs() << "Applying record fixup\n";
+    // FIXME(tstellar) There must be a better way of getting an insertion point
+    // after the class keyword.
+    int offset = 6;
+    if (CD->isStruct())
+      offset = 7;
+    clang::SourceLocation insertion_point = CD->getBeginLoc().getLocWithOffset(offset);
+    unexported_public_interface(location)
+        << CD
         << clang::FixItHint::CreateInsertion(insertion_point,
                                              export_macro + " ");
     return true;
@@ -154,7 +300,8 @@ class consumer : public clang::ASTConsumer {
     }
 
     std::string RewriteFilename(const std::string &filename, int &fd) override {
-      llvm_unreachable("unexpected call to RewriteFilename");
+      //llvm_unreachable("unexpected call to RewriteFilename");
+      return "";
     }
   };
 
