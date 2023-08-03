@@ -121,8 +121,8 @@ public:
       return true;
 
     llvm::dbgs() << "Friend kind: " << FD->getFriendObjectKind() << "\n";
-    if (FD->getFriendObjectKind() != clang::Decl::FriendObjectKind::FOK_None)
-        return true;
+//    if (FD->getFriendObjectKind() != clang::Decl::FriendObjectKind::FOK_None)
+//        return true;
 
     llvm::dbgs() << "Not friend\n";
     // Ignore deleted and defaulted functions (e.g. operators).
@@ -168,6 +168,17 @@ public:
         FD->getTemplatedKind() == clang::FunctionDecl::TK_NonTemplate
             ? FD->getBeginLoc()
             : FD->getInnerLocStart();
+    
+    if (FD->getFriendObjectKind() != clang::Decl::FriendObjectKind::FOK_None) {
+      llvm::dbgs() << "friend begin: ";  FD->getReturnTypeSourceRange().getBegin().dump(source_manager_);  FD->getReturnTypeSourceRange().getEnd().dump(source_manager_);
+
+      int offset = FD->getReturnType().getAsString().length() + 1;
+      llvm::dbgs() << "Type: '" << FD->getDeclaredReturnType() << "' has length " << FD->getDeclaredReturnType().getAsString().length() << "\n";
+      FD->getFunctionTypeLoc().getLocalRangeBegin().dump(source_manager_);
+      insertion_point = FD->getNameInfo().getLoc();
+      insertion_point = FD->getReturnTypeSourceRange().getBegin();
+    }
+
     unexported_public_interface(location)
         << FD
         << clang::FixItHint::CreateInsertion(insertion_point,
@@ -176,12 +187,14 @@ public:
   }
   
   bool VisitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl *CTSD) {
+    return true;
     llvm::dbgs() << "TemplateDecl: " << CTSD->getNameAsString() << "\n";
     clang::FullSourceLoc location = get_location(CTSD);
     location.dump();
     llvm::StringRef filename = source_manager_.getFilename(location);
     if (filename.find("/lib/") != llvm::StringRef::npos ||
         filename.find("/tools/") != llvm::StringRef::npos ||
+        filename.find("/gtest/") != llvm::StringRef::npos ||
         filename.find(".def") != llvm::StringRef::npos)
       return true;
     llvm::dbgs() << "In correct spot\n";
@@ -190,14 +203,24 @@ public:
         CTSD->hasAttr<clang::VisibilityAttr>())
       return true; 
     llvm::dbgs() << "No visibility\n";
-  
-//    if (CTSD->isThisDeclarationADefinition())
-//      return true;
+ 
+#if 0 
+    if (CTSD->isThisDeclarationADefinition())
+      return true;
+
+    llvm::dbgs() << "Not a declaration\n";
+#endif
+
+    if (CTSD->isExplicitSpecialization())
+      llvm::dbgs() << "Is explicit specialization\n";
 
     int offset = 6;
     if (CTSD->getSpecializedTemplate()->getTemplatedDecl()->isStruct())
       offset = 7;
     clang::SourceLocation insertion_point = CTSD->getExternLoc();
+    insertion_point = CTSD->getSpecializedTemplate()->getBeginLoc();
+    //insertion_point = CTSD->getSpecializedTemplate()->getTemplatedDecl()->getBeginLoc();
+    insertion_point = location.getLocWithOffset(offset);
     unexported_public_interface(location)
         << CTSD
         << clang::FixItHint::CreateInsertion(insertion_point,
@@ -210,6 +233,7 @@ public:
     clang::FullSourceLoc location = get_location(VD);
     llvm::StringRef filename = source_manager_.getFilename(location);
     if (filename.find("/lib/") != llvm::StringRef::npos ||
+        filename.find("/gtest/") != llvm::StringRef::npos ||
         filename.find("/tools/") != llvm::StringRef::npos ||
         filename.find(".def") != llvm::StringRef::npos)
       return true;
@@ -238,6 +262,7 @@ public:
     clang::FullSourceLoc location = get_location(CD);
     llvm::StringRef filename = source_manager_.getFilename(location);
     if (filename.find("/lib/") != llvm::StringRef::npos ||
+        filename.find("/gtest/") != llvm::StringRef::npos ||
         filename.find("/tools/") != llvm::StringRef::npos ||
         filename.find(".def") != llvm::StringRef::npos)
       return true;
