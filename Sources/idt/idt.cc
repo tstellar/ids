@@ -92,7 +92,7 @@ class visitor : public clang::RecursiveASTVisitor<visitor> {
            filename.find("/tools/") == llvm::StringRef::npos &&
            filename.find(".def") == llvm::StringRef::npos &&
            filename.find("clang/") == llvm::StringRef::npos &&
-	   filename.find("unittests") == llvm::StringRef::npos;
+	   filename.find("unittest") == llvm::StringRef::npos;
   }
 
 public:
