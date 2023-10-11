@@ -86,6 +86,15 @@ class visitor : public clang::RecursiveASTVisitor<visitor> {
     return context_.getFullLoc(TD->getBeginLoc()).getExpansionLoc();
   }
 
+  bool shouldUpdateFile(llvm::StringRef filename) const {
+    return filename.find("/lib/") == llvm::StringRef::npos &&
+           filename.find("install/") == llvm::StringRef::npos &&
+           filename.find("/tools/") == llvm::StringRef::npos &&
+           filename.find(".def") == llvm::StringRef::npos &&
+           filename.find("clang/") == llvm::StringRef::npos &&
+	   filename.find("unittests") == llvm::StringRef::npos;
+  }
+
 public:
   explicit visitor(clang::ASTContext &context)
       : context_(context), source_manager_(context.getSourceManager()) {}
@@ -97,9 +106,7 @@ public:
     llvm::dbgs() << "FunctionDecl: " << FD->getNameAsString() << "\n";
 
     llvm::StringRef filename = source_manager_.getFilename(location);
-    if (filename.find("/lib/") != llvm::StringRef::npos ||
-        filename.find("/tools/") != llvm::StringRef::npos ||
-        filename.find(".def") != llvm::StringRef::npos)
+    if (!shouldUpdateFile(filename))
       return true;
     // Ignore declarations from the system.
     if (source_manager_.isInSystemHeader(location))
@@ -182,7 +189,7 @@ public:
     unexported_public_interface(location)
         << FD
         << clang::FixItHint::CreateInsertion(insertion_point,
-                                             export_macro + " ");
+                                             "LLVM_FUNC_ABI ");
     return true;
   }
   
@@ -192,10 +199,7 @@ public:
     clang::FullSourceLoc location = get_location(CTSD);
     location.dump();
     llvm::StringRef filename = source_manager_.getFilename(location);
-    if (filename.find("/lib/") != llvm::StringRef::npos ||
-        filename.find("/tools/") != llvm::StringRef::npos ||
-        filename.find("/gtest/") != llvm::StringRef::npos ||
-        filename.find(".def") != llvm::StringRef::npos)
+    if (!shouldUpdateFile(filename))
       return true;
     llvm::dbgs() << "In correct spot\n";
     if (CTSD->hasAttr<clang::DLLExportAttr>() ||
@@ -224,7 +228,7 @@ public:
     unexported_public_interface(location)
         << CTSD
         << clang::FixItHint::CreateInsertion(insertion_point,
-                                             export_macro + " ");
+                                             "LLVM_CLASS_ABI ");
     return true;
     
   }
@@ -232,10 +236,7 @@ public:
   bool VisitVarDecl(clang::VarDecl *VD) {
     clang::FullSourceLoc location = get_location(VD);
     llvm::StringRef filename = source_manager_.getFilename(location);
-    if (filename.find("/lib/") != llvm::StringRef::npos ||
-        filename.find("/gtest/") != llvm::StringRef::npos ||
-        filename.find("/tools/") != llvm::StringRef::npos ||
-        filename.find(".def") != llvm::StringRef::npos)
+    if (!shouldUpdateFile(filename))
       return true;
     if (VD->hasAttr<clang::DLLExportAttr>() ||
         VD->hasAttr<clang::DLLImportAttr>() ||
@@ -248,7 +249,7 @@ public:
     unexported_public_interface(location)
         << VD
         << clang::FixItHint::CreateInsertion(insertion_point,
-                                             export_macro + " ");
+                                             "LLVM_FUNC_ABI ");
     return true;
   }
 
@@ -261,10 +262,7 @@ public:
       return true;
     clang::FullSourceLoc location = get_location(CD);
     llvm::StringRef filename = source_manager_.getFilename(location);
-    if (filename.find("/lib/") != llvm::StringRef::npos ||
-        filename.find("/gtest/") != llvm::StringRef::npos ||
-        filename.find("/tools/") != llvm::StringRef::npos ||
-        filename.find(".def") != llvm::StringRef::npos)
+    if (!shouldUpdateFile(filename))
       return true;
     // Ignore declarations from the system.
     if (source_manager_.isInSystemHeader(location))
@@ -312,7 +310,7 @@ public:
     unexported_public_interface(location)
         << CD
         << clang::FixItHint::CreateInsertion(insertion_point,
-                                             export_macro + " ");
+                                             "LLVM_CLASS_ABI ");
     return true;
   }
 };
