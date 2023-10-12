@@ -92,6 +92,8 @@ class visitor : public clang::RecursiveASTVisitor<visitor> {
            filename.find("/tools/") == llvm::StringRef::npos &&
            filename.find(".def") == llvm::StringRef::npos &&
            filename.find("clang/") == llvm::StringRef::npos &&
+           filename.find("lld/") == llvm::StringRef::npos &&
+           filename.find("lldb/") == llvm::StringRef::npos &&
 	   filename.find("unittest") == llvm::StringRef::npos;
   }
 
@@ -193,15 +195,30 @@ public:
     return true;
   }
   
-  bool VisitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl *CTSD) {
+  bool VisitClassTemplateDecl(clang::ClassTemplateDecl *CTD) {
+    llvm::dbgs() << "ClassTemplateDecl: " << CTD->getNameAsString() << " is definition: " << CTD->isThisDeclarationADefinition() << " visible: " << CTD->isExternallyVisible() << "\n";
     return true;
+  }
+  
+  bool VisitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl *CTSD) {
     llvm::dbgs() << "TemplateDecl: " << CTSD->getNameAsString() << "\n";
+    llvm::dbgs() << "Has body: " << CTSD->hasBody() << "\n";
+    llvm::dbgs() << "Has definition: " << CTSD->hasDefinition() << "\n";
+    llvm::dbgs() << "Specialization Kind: " << CTSD->getSpecializationKind() << "\n";
     clang::FullSourceLoc location = get_location(CTSD);
     location.dump();
     llvm::StringRef filename = source_manager_.getFilename(location);
     if (!shouldUpdateFile(filename))
       return true;
     llvm::dbgs() << "In correct spot\n";
+
+#if 0
+    if (CTSD->getNameAsString() != "SmallVectorBase" &&
+        CTSD->getNameAsString() != "PassManager" &&
+	CTSD->getNameAsString() != "AnalysisManager")
+      return true;
+#endif
+
     if (CTSD->hasAttr<clang::DLLExportAttr>() ||
         CTSD->hasAttr<clang::DLLImportAttr>() ||
         CTSD->hasAttr<clang::VisibilityAttr>())
@@ -218,6 +235,17 @@ public:
     if (CTSD->isExplicitSpecialization())
       llvm::dbgs() << "Is explicit specialization\n";
 
+    llvm::dbgs() << "Is ClassScope: " << CTSD->isClassScopeExplicitSpecialization() << "\n";
+    if (CTSD->isClassScopeExplicitSpecialization())
+      return true;
+
+    if (!CTSD->getExternLoc().isValid())
+      return true;
+
+    if (!CTSD->hasExternalFormalLinkage()) {
+      llvm::dbgs() << "NO external formal linkage\n";
+      return true;
+    }
     int offset = 6;
     if (CTSD->getSpecializedTemplate()->getTemplatedDecl()->isStruct())
       offset = 7;
