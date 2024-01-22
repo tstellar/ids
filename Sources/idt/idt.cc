@@ -14,18 +14,10 @@
 #include <string>
 
 namespace idt {
-llvm::cl::OptionCategory category{"iterface definition scanner options"};
+llvm::cl::OptionCategory category{"interface definition scanner options"};
 }
 
 namespace {
-// TODO(compnerd) make this configurable via a configuration file or commandline
-const std::set<std::string> kIgnoredFunctions{
-  "_BitScanForward",
-  "_BitScanForward64",
-  "_BitScanReverse",
-  "_BitScanReverse64",
-  "__builtin_strlen",
-};
 
 llvm::cl::opt<std::string>
 export_macro("export-macro",
@@ -43,10 +35,26 @@ inplace("inplace", llvm::cl::init(false),
         llvm::cl::desc("Apply suggested changes in-place"),
         llvm::cl::cat(idt::category));
 
+llvm::cl::list<std::string>
+ignored_functions("ignore",
+                  llvm::cl::desc("Ignore one or more functions"),
+                  llvm::cl::value_desc("function-name[,function-name...]"),
+                  llvm::cl::CommaSeparated,
+                  llvm::cl::cat(idt::category));
+
 template <typename Key, typename Compare, typename Allocator>
 bool contains(const std::set<Key, Compare, Allocator>& set, const Key& key) {
   return set.find(key) != set.end();
 }
+
+const std::set<std::string> &get_ignored_functions() {
+  static auto kIgnoredFunctions = [&]() -> std::set<std::string> {
+      return { ignored_functions.begin(), ignored_functions.end() };
+    }();
+
+  return kIgnoredFunctions;
+}
+
 }
 
 namespace idt {
@@ -131,7 +139,7 @@ public:
 
     // Ignore known forward declarations (builtins)
     // TODO(compnerd) replace with std::set::contains in C++20
-    if (contains(kIgnoredFunctions, FD->getNameAsString()))
+    if (contains(get_ignored_functions(), FD->getNameAsString()))
       return true;
 
     clang::SourceLocation insertion_point =
